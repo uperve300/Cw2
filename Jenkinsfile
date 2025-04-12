@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'uperve300/devops-app:latest'
         PROD_SERVER = 'ubuntu@3.94.4.57'
-        SSH_KEY = '~/.ssh/devops.pem'
+        SSH_KEY = '/var/lib/jenkins/.ssh/devops.pem'
     }
 
     stages {
