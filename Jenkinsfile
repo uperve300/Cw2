@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'uperve300/devops-app:latest'
-        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-creds')  // Add in Jenkins
         PROD_SERVER = 'ubuntu@3.94.4.57'
+        SSH_KEY = '~/.ssh/devops.pem'
     }
 
     stages {
@@ -33,14 +33,11 @@ pipeline {
         stage('Ansible Deploy') {
             steps {
                 echo 'Running Ansible playbook to configure server...'
-
-                // Securely use the private SSH key from Jenkins credentials
-                withCredentials([sshUserPrivateKey(credentialsId: 'devops-ssh-key', keyFileVariable: 'SSH_KEY_PATH')]) {
-                    // Run the Ansible playbook on the production server using the private key
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no -i $SSH_KEY_PATH $PROD_SERVER "ansible-playbook -i $PROD_SERVER, playbook.yml --private-key $SSH_KEY_PATH"
-                    '''
-                }
+                sh '''
+                    chmod 600 $SSH_KEY
+                    ssh -o StrictHostKeyChecking=no -i $SSH_KEY $PROD_SERVER \
+                        "ansible-playbook -i $PROD_SERVER, playbook.yml --private-key $SSH_KEY"
+                '''
             }
         }
 
@@ -48,8 +45,8 @@ pipeline {
             steps {
                 echo 'Deploying app on Kubernetes cluster...'
                 sh '''
-                kubectl apply -f k8s/deployment.yml
-                kubectl apply -f k8s/service.yml
+                    kubectl apply -f k8s/deployment.yml
+                    kubectl apply -f k8s/service.yml
                 '''
             }
         }
