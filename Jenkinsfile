@@ -21,7 +21,9 @@ pipeline {
                 sh 'docker build -t $DOCKER_IMAGE .'
 
                 echo 'Logging in to Docker Hub...'
-                sh 'echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin'
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_CREDENTIALS_USR', passwordVariable: 'DOCKER_HUB_CREDENTIALS_PSW')]) {
+                    sh 'echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin'
+                }
 
                 echo 'Pushing image to Docker Hub...'
                 sh 'docker push $DOCKER_IMAGE'
@@ -31,9 +33,14 @@ pipeline {
         stage('Ansible Deploy') {
             steps {
                 echo 'Running Ansible playbook to configure server...'
-                sh '''
-                ansible-playbook -i "$PROD_SERVER," playbook.yml --private-key ~/.ssh/devops.pem
-                '''
+
+                // Securely use the private SSH key from Jenkins credentials
+                withCredentials([sshUserPrivateKey(credentialsId: 'devops-ssh-key', keyFileVariable: 'SSH_KEY_PATH')]) {
+                    // Run the Ansible playbook on the production server using the private key
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no -i $SSH_KEY_PATH $PROD_SERVER "ansible-playbook -i $PROD_SERVER, playbook.yml --private-key $SSH_KEY_PATH"
+                    '''
+                }
             }
         }
 
