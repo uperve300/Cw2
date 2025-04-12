@@ -3,52 +3,66 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'uperve300/devops-app:latest'
-        PROD_SERVER = 'ubuntu@3.94.4.57'
+        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-creds')
         SSH_KEY = '/var/lib/jenkins/.ssh/devops.pem'
+        PROD_SERVER = 'ubuntu@3.94.4.57'
+    }
+
+    triggers {
+        pollSCM('* * * * *')  // (a) Automatically detect GitHub changes every minute
     }
 
     stages {
-        stage('Build') {
-            steps {
-                echo 'Building the project...'
-                sh 'echo "Hello DevOps!" > app.txt'
-            }
-        }
 
-        stage('Docker Build & Push') {
+        stage('Build Docker Image') { // (b)
             steps {
                 echo 'Building Docker image...'
                 sh 'docker build -t $DOCKER_IMAGE .'
+            }
+        }
 
-                echo 'Logging in to Docker Hub...'
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_CREDENTIALS_USR', passwordVariable: 'DOCKER_HUB_CREDENTIALS_PSW')]) {
-                    sh 'echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin'
+        stage('Run Build Test') { // (c)
+            steps {
+                echo 'Testing Docker container startup...'
+                sh '''
+                    docker run -d --name test-container $DOCKER_IMAGE
+                    sleep 5
+                    docker exec test-container echo "Container launched successfully"
+                    docker stop test-container
+                    docker rm test-container
+                '''
+            }
+        }
+
+        stage('Push Docker Image to DockerHub') { // (d)
+            steps {
+                echo 'Logging in to DockerHub and pushing image...'
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASS')]) {
+                    sh '''
+                        echo $DOCKER_HUB_PASS | docker login -u $DOCKER_HUB_USER --password-stdin
+                        docker push $DOCKER_IMAGE
+                    '''
                 }
-
-                echo 'Pushing image to Docker Hub...'
-                sh 'docker push $DOCKER_IMAGE'
             }
         }
 
-        stage('Ansible Deploy') {
+        stage('Deploy to Kubernetes') { // (e)
             steps {
-                echo 'Running Ansible playbook to configure server...'
+                echo 'Deploying application to Kubernetes cluster...'
                 sh '''
-                    chmod 600 $SSH_KEY
                     ssh -o StrictHostKeyChecking=no -i $SSH_KEY $PROD_SERVER \
-                        "ansible-playbook -i $PROD_SERVER, playbook.yml --private-key $SSH_KEY"
+                        "kubectl set image deployment/devops-deployment devops-container=$DOCKER_IMAGE --record"
                 '''
             }
         }
+    }
 
-        stage('Kubernetes Deploy') {
-            steps {
-                echo 'Deploying app on Kubernetes cluster...'
-                sh '''
-                    kubectl apply -f k8s/deployment.yml
-                    kubectl apply -f k8s/service.yml
-                '''
-            }
+    post {
+        success {
+            echo '✅ Deployment pipeline completed successfully.'
+        }
+        failure {
+            echo '❌ Deployment pipeline failed.'
         }
     }
 }
